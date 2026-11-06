@@ -1,0 +1,26 @@
+{
+  "name": "hospital-inteligente-iot-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "REST, MQTT, telemetria e analitica para Hospital Inteligente IoT",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "simulate": "node src/simulator.js",
+    "seed": "node src/seed-history.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@azure/identity": "^4.5.0",
+    "@influxdata/influxdb-client": "^1.35.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "helmet": "^8.0.0",
+    "mqtt": "^5.10.3",
+    "pg": "^8.13.1",
+    "swagger-ui-express": "^5.0.1"
+  }
+}

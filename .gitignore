@@ -1,0 +1,15 @@
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+coverage/
+__pycache__/
+*.py[cod]
+.DS_Store
+*.log
+*.pdf
+frontend/node_modules/
+frontend/dist/
+backend/node_modules/
+datasets/generated/

@@ -1,0 +1,180 @@
+name: hospital-inteligente-iot
+
+services:
+  mqtt:
+    build:
+      context: ./mqtt
+    image: hospital-iot-mqtt:dev
+    restart: unless-stopped
+    environment:
+      MOSQUITTO_USERNAME: ${MQTT_USERNAME:-hospital-local}
+      MOSQUITTO_PASSWORD: ${MQTT_PASSWORD:-local-only-change-me-mqtt}
+    ports:
+      - "${MQTT_PORT:-1883}:1883"
+    volumes:
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_logs:/mosquitto/log
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_sub -h 127.0.0.1 -u \"$${MOSQUITTO_USERNAME}\" -P \"$${MOSQUITTO_PASSWORD}\" -t '$$SYS/broker/version' -C 1 -W 5 >/dev/null"]
+      interval: 10s
+      timeout: 7s
+      retries: 5
+
+  influxdb:
+    build:
+      context: ./influxdb
+    image: hospital-iot-influxdb:dev
+    restart: unless-stopped
+    ports:
+      - "${INFLUX_PORT:-8086}:8086"
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: ${POSTGRES_USER:-hospital}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${POSTGRES_PASSWORD:-local-only-change-me}
+      DOCKER_INFLUXDB_INIT_ORG: ${INFLUX_ORG:-hospital}
+      DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUX_BUCKET:-HospitalIoT}
+      DOCKER_INFLUXDB_INIT_RETENTION: 6d
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX_TOKEN:-local-only-change-me-influx-token}
+    volumes:
+      - influxdb_data:/var/lib/influxdb2
+      - influxdb_config:/etc/influxdb2
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-hospital_iot}
+      POSTGRES_USER: ${POSTGRES_USER:-hospital}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-only-change-me}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  history-seed:
+    build:
+      context: ./backend
+    command: ["npm", "run", "seed"]
+    environment:
+      INFLUX_URL: http://influxdb:8086
+      INFLUX_ORG: ${INFLUX_ORG:-hospital}
+      INFLUX_BUCKET: ${INFLUX_BUCKET:-HospitalIoT}
+      INFLUX_TOKEN: ${INFLUX_TOKEN:-local-only-change-me-influx-token}
+      DATABASE_URL: postgres://${POSTGRES_USER:-hospital}:${POSTGRES_PASSWORD:-local-only-change-me}@postgres:5432/${POSTGRES_DB:-hospital_iot}
+      AZURE_DIGITAL_TWINS_URL: ${AZURE_DIGITAL_TWINS_URL:-}
+    depends_on:
+      influxdb:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-3000}:3000"
+    environment:
+      PORT: 3000
+      MQTT_URL: ${MQTT_URL:-mqtt://mqtt:1883}
+      MQTT_USERNAME: ${MQTT_USERNAME:-hospital-local}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-local-only-change-me-mqtt}
+      INFLUX_URL: http://influxdb:8086
+      INFLUX_ORG: ${INFLUX_ORG:-hospital}
+      INFLUX_BUCKET: ${INFLUX_BUCKET:-HospitalIoT}
+      INFLUX_TOKEN: ${INFLUX_TOKEN:-local-only-change-me-influx-token}
+      DATABASE_URL: postgres://${POSTGRES_USER:-hospital}:${POSTGRES_PASSWORD:-local-only-change-me}@postgres:5432/${POSTGRES_DB:-hospital_iot}
+      HOSPITAL_LATITUDE: ${HOSPITAL_LATITUDE:-4.7110}
+      HOSPITAL_LONGITUDE: ${HOSPITAL_LONGITUDE:--74.0721}
+      AZURE_MAPS_KEY: ${AZURE_MAPS_KEY:-}
+      CORS_ORIGIN: http://localhost:5173
+      CONTROL_TOKEN: ${CONTROL_TOKEN:-}
+      AZURE_DIGITAL_TWINS_URL: ${AZURE_DIGITAL_TWINS_URL:-}
+      AI_SERVICE_URL: http://analytics-ai:8000
+    depends_on:
+      mqtt:
+        condition: service_healthy
+      influxdb:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      analytics-ai:
+        condition: service_healthy
+
+  analytics-ai:
+    build:
+      context: ./analytics-ai
+    image: hospital-iot-analytics-ai:dev
+    restart: unless-stopped
+    expose:
+      - "8000"
+
+  simulator:
+    build:
+      context: ./backend
+    command: ["npm", "run", "simulate"]
+    restart: unless-stopped
+    environment:
+      MQTT_URL: ${MQTT_URL:-mqtt://mqtt:1883}
+      MQTT_USERNAME: ${MQTT_USERNAME:-hospital-local}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-local-only-change-me-mqtt}
+      TELEMETRY_INTERVAL_MS: ${TELEMETRY_INTERVAL_MS:-300000}
+      HOSPITAL_LATITUDE: ${HOSPITAL_LATITUDE:-4.7110}
+      HOSPITAL_LONGITUDE: ${HOSPITAL_LONGITUDE:--74.0721}
+      AZURE_MAPS_KEY: ${AZURE_MAPS_KEY:-}
+    depends_on:
+      mqtt:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    environment:
+      API_PROXY_URL: http://backend:3000
+      GRAFANA_URL: http://localhost:${GRAFANA_PORT:-3001}
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
+  grafana:
+    build:
+      context: ./grafana
+    image: hospital-iot-grafana:dev
+    restart: unless-stopped
+    ports:
+      - "${GRAFANA_PORT:-3001}:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-local-only-change-me}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      INFLUX_ORG: ${INFLUX_ORG:-hospital}
+      INFLUX_BUCKET: ${INFLUX_BUCKET:-HospitalIoT}
+      INFLUX_TOKEN: ${INFLUX_TOKEN:-local-only-change-me-influx-token}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      influxdb:
+        condition: service_healthy
+
+volumes:
+  mosquitto_data:
+  mosquitto_logs:
+  influxdb_data:
+  influxdb_config:
+  postgres_data:
+  grafana_data:

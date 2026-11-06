@@ -1,0 +1,7 @@
+timestamp,deviceId,metric,value,event,unit
+2026-11-01T12:00:00Z,fridge01,voltage,0,corte_electrico,V
+2026-11-01T12:05:00Z,fridge01,temperature,9.2,corte_electrico,°C
+2026-11-02T15:00:00Z,twin-icu,connectedPatients,11,aumento_ocupacional,personas_sinteticas
+2026-11-04T13:00:00Z,weather-external,temperature,31.0,ola_de_calor,°C
+2026-11-05T08:20:00Z,patient-icu02,heartRate,,falla_sensor,muestra_ausente
+2026-11-06T09:00:00Z,fridge01,doorOpen,1,mantenimiento_programado,booleano

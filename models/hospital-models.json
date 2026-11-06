@@ -1,0 +1,35 @@
+[
+  {
+    "@id": "dtmi:hospital:OperatingRoom;1",
+    "@type": "Interface",
+    "@context": "dtmi:dtdl:context;3",
+    "displayName": "Quirófano Inteligente",
+    "contents": [
+      { "@type": "Property", "name": "temperature", "schema": "double" },
+      { "@type": "Property", "name": "humidity", "schema": "double" },
+      { "@type": "Property", "name": "occupancy", "schema": "double" }
+    ]
+  },
+  {
+    "@id": "dtmi:hospital:ICU;1",
+    "@type": "Interface",
+    "@context": "dtmi:dtdl:context;3",
+    "displayName": "Unidad de Cuidados Intensivos",
+    "contents": [
+      { "@type": "Property", "name": "availableBeds", "schema": "double" },
+      { "@type": "Property", "name": "connectedPatients", "schema": "double" },
+      { "@type": "Property", "name": "operationalEquipment", "schema": "double" }
+    ]
+  },
+  {
+    "@id": "dtmi:hospital:Pharmacy;1",
+    "@type": "Interface",
+    "@context": "dtmi:dtdl:context;3",
+    "displayName": "Farmacia Hospitalaria",
+    "contents": [
+      { "@type": "Property", "name": "inventory", "schema": "double" },
+      { "@type": "Property", "name": "criticalMedicationCount", "schema": "double" },
+      { "@type": "Property", "name": "temperature", "schema": "double" }
+    ]
+  }
+]

@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Backend tests
+        working-directory: backend
+        run: |
+          npm install
+          npm test
+      - name: Frontend typecheck and build
+        working-directory: frontend
+        run: |
+          npm install
+          npm run build
+      - name: Validate JSON documents
+        run: |
+          node -e "JSON.parse(require('fs').readFileSync('backend/openapi.json'))"
+          node -e "JSON.parse(require('fs').readFileSync('grafana/dashboards/hospital-overview.json'))"
+          node -e "JSON.parse(require('fs').readFileSync('backend/models/hospital-models.json'))"
+      - name: Compile Python service
+        run: python -m py_compile analytics-ai/app.py

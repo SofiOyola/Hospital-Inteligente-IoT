@@ -1,0 +1,123 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Hospital Inteligente IoT API",
+    "version": "1.0.0",
+    "description": "API académica de telemetría y control IoT. Datos simulados: no usar para diagnóstico ni tratamiento."
+  },
+  "servers": [{ "url": "/api" }],
+  "tags": [
+    { "name": "Devices" },
+    { "name": "Telemetry" },
+    { "name": "Control" },
+    { "name": "Digital Twins" },
+    { "name": "Analytics" }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Estado de la API",
+        "responses": { "200": { "description": "API disponible" } }
+      }
+    },
+    "/devices": {
+      "get": {
+        "tags": ["Devices"],
+        "summary": "Lista los diez dispositivos y su último estado",
+        "responses": { "200": { "description": "Catálogo y telemetría reciente" } }
+      }
+    },
+    "/devices/{id}": {
+      "get": {
+        "tags": ["Devices"],
+        "summary": "Consulta un dispositivo",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Dispositivo encontrado" },
+          "404": { "description": "Dispositivo no encontrado" }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "tags": ["Telemetry"],
+        "summary": "Consulta series históricas agregadas por ventana de cinco minutos",
+        "parameters": [
+          { "name": "deviceId", "in": "query", "schema": { "type": "string" } },
+          { "name": "metric", "in": "query", "schema": { "type": "string" } },
+          { "name": "range", "in": "query", "schema": { "type": "string", "enum": ["1h", "6h", "24h", "7d"], "default": "24h" } }
+        ],
+        "responses": { "200": { "description": "Serie de telemetría" } }
+      }
+    },
+    "/alerts": {
+      "get": {
+        "tags": ["Telemetry"],
+        "summary": "Lista alertas activas y resueltas",
+        "parameters": [{ "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 500 } }],
+        "responses": { "200": { "description": "Alertas recientes" } }
+      }
+    },
+    "/analytics": {
+      "get": {
+        "tags": ["Analytics"],
+        "summary": "Calcula tendencias, máximos, mínimos y posibles anomalías estadísticas",
+        "responses": { "200": { "description": "Resumen estadístico de las últimas 24 horas" } }
+      }
+    },
+    "/control": {
+      "post": {
+        "tags": ["Control"],
+        "summary": "Publica un comando MQTT remoto",
+        "security": [{ "ControlToken": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["deviceId", "command"],
+                "properties": {
+                  "deviceId": { "type": "string"                   },
+                  "components": {
+                    "securitySchemes": {
+                      "ControlToken": {
+                        "type": "http",
+                        "scheme": "bearer",
+                        "description": "Requerido si CONTROL_TOKEN está configurado."
+                      }
+                    }
+                  },
+                  "command": { "type": "string", "enum": ["turn_on", "turn_off", "restart", "calibrate", "set_interval", "simulate_failure"] },
+                  "parameters": { "type": "object", "properties": { "intervalMs": { "type": "integer", "minimum": 5000, "maximum": 3600000 } } }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": { "description": "Comando publicado y auditado" },
+          "400": { "description": "Entrada inválida" },
+          "500": { "description": "Broker MQTT no disponible" }
+        }
+      }
+    },
+    "/twins": {
+      "get": {
+        "tags": ["Digital Twins"],
+        "summary": "Consulta snapshots de los tres gemelos digitales simulados",
+        "responses": { "200": { "description": "Estado actual de gemelos digitales" } }
+      }
+    },
+    "/weather": {
+      "get": {
+        "tags": ["Analytics"],
+        "summary": "Obtiene clima real mediante Azure Maps Weather",
+        "responses": {
+          "200": { "description": "Condiciones actuales de Azure Maps" },
+          "503": { "description": "Configure AZURE_MAPS_KEY para habilitar el proveedor" }
+        }
+      }
+    }
+  }
+}
