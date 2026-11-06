@@ -3,7 +3,7 @@ targetScope = 'resourceGroup'
 @minLength(3)
 @maxLength(6)
 param namePrefix string
-param location string = resourceGroup().location
+param location string = 'eastus'
 param registryName string
 param imageTag string = 'latest'
 @secure()
@@ -20,8 +20,8 @@ param mqttUsername string = 'hospital-iot'
 param mqttPassword string
 @secure()
 param azureMapsKey string = ''
-param enableDigitalTwins bool = false
-param enableAppService bool = false
+param enableDigitalTwins bool = true
+param enableAppService bool = true
 param dnsZoneName string = ''
 
 var accountName = toLower('st${namePrefix}${uniqueString(resourceGroup().id)}')
@@ -339,7 +339,7 @@ resource analyticsAiApp 'Microsoft.App/containerApps@2024-03-01' = {
         }
       }]
       scale: {
-        minReplicas: 1
+        minReplicas: 0
         maxReplicas: 2
       }
     }
@@ -571,7 +571,7 @@ resource backendApp 'Microsoft.App/containerApps@2024-03-01' = {
         ] : [])
       }]
       scale: {
-        minReplicas: 1
+        minReplicas: 0
         maxReplicas: 3
       }
     }
@@ -740,7 +740,7 @@ resource frontendApp 'Microsoft.App/containerApps@2024-03-01' = {
         ]
       }]
       scale: {
-        minReplicas: 1
+        minReplicas: 0
         maxReplicas: 3
       }
     }
@@ -823,7 +823,7 @@ resource grafanaApp 'Microsoft.App/containerApps@2024-03-01' = {
         }
       ]
       scale: {
-        minReplicas: 1
+        minReplicas: 0
         maxReplicas: 1
       }
     }

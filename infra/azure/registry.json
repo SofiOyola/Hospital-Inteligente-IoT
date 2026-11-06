@@ -1,0 +1,56 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.48.1.52935",
+      "templateHash": "13152130714710160722"
+    }
+  },
+  "parameters": {
+    "namePrefix": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 6,
+      "metadata": {
+        "description": "Prefijo corto, en minúsculas y único dentro del grupo de recursos."
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "centralus"
+    }
+  },
+  "variables": {
+    "registryName": "[toLower(format('cr{0}{1}', parameters('namePrefix'), uniqueString(resourceGroup().id)))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.ContainerRegistry/registries",
+      "apiVersion": "2023-07-01",
+      "name": "[variables('registryName')]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "Basic"
+      },
+      "properties": {
+        "adminUserEnabled": false,
+        "publicNetworkAccess": "Enabled"
+      },
+      "tags": {
+        "project": "hospital-inteligente-iot"
+      }
+    }
+  ],
+  "outputs": {
+    "registryName": {
+      "type": "string",
+      "value": "[variables('registryName')]"
+    },
+    "loginServer": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.ContainerRegistry/registries', variables('registryName')), '2023-07-01').loginServer]"
+    }
+  }
+}

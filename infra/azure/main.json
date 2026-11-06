@@ -1,0 +1,1034 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.48.1.52935",
+      "templateHash": "11761505165436696359"
+    }
+  },
+  "parameters": {
+    "namePrefix": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 6
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "centralus"
+    },
+    "registryName": {
+      "type": "string"
+    },
+    "imageTag": {
+      "type": "string",
+      "defaultValue": "latest"
+    },
+    "postgresAdminPassword": {
+      "type": "securestring"
+    },
+    "postgresAdminLogin": {
+      "type": "string",
+      "defaultValue": "hospitaladmin"
+    },
+    "influxToken": {
+      "type": "securestring"
+    },
+    "grafanaPassword": {
+      "type": "securestring"
+    },
+    "controlToken": {
+      "type": "securestring"
+    },
+    "mqttUsername": {
+      "type": "string",
+      "defaultValue": "hospital-iot"
+    },
+    "mqttPassword": {
+      "type": "securestring"
+    },
+    "azureMapsKey": {
+      "type": "securestring",
+      "defaultValue": ""
+    },
+    "enableDigitalTwins": {
+      "type": "bool",
+      "defaultValue": true
+    },
+    "enableAppService": {
+      "type": "bool",
+      "defaultValue": true
+    },
+    "dnsZoneName": {
+      "type": "string",
+      "defaultValue": ""
+    }
+  },
+  "variables": {
+    "accountName": "[toLower(format('st{0}{1}', parameters('namePrefix'), uniqueString(resourceGroup().id)))]",
+    "workspaceName": "[format('log-{0}-{1}', parameters('namePrefix'), uniqueString(resourceGroup().id))]",
+    "environmentName": "[format('cae-{0}', parameters('namePrefix'))]",
+    "pgName": "[format('pg-{0}-{1}', parameters('namePrefix'), uniqueString(resourceGroup().id))]",
+    "vnetName": "[format('vnet-{0}', parameters('namePrefix'))]",
+    "appPrefix": "[format('app-{0}', parameters('namePrefix'))]",
+    "acrPullRoleId": "7f951dda-4ed3-4680-a7ca-43fe172d538d",
+    "twinsDataOwnerRoleId": "bcd981a7-7f74-457b-83e1-cceb9e632ffe",
+    "appIdentity": {
+      "type": "UserAssigned",
+      "userAssignedIdentities": {
+        "[format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('id-{0}', parameters('namePrefix'))))]": {}
+      }
+    },
+    "commonSecrets": "[concat(createArray(createObject('name', 'influx-token', 'value', parameters('influxToken')), createObject('name', 'pg-password', 'value', parameters('postgresAdminPassword')), createObject('name', 'grafana-password', 'value', parameters('grafanaPassword')), createObject('name', 'control-token', 'value', parameters('controlToken')), createObject('name', 'mqtt-password', 'value', parameters('mqttPassword')), createObject('name', 'database-url', 'value', format('postgres://{0}:{1}@{2}.postgres.database.azure.com:5432/hospital_iot?sslmode=require', parameters('postgresAdminLogin'), parameters('postgresAdminPassword'), variables('pgName')))), if(empty(parameters('azureMapsKey')), createArray(), createArray(createObject('name', 'maps-key', 'value', parameters('azureMapsKey')))))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.OperationalInsights/workspaces",
+      "apiVersion": "2022-10-01",
+      "name": "[variables('workspaceName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "sku": {
+          "name": "PerGB2018"
+        },
+        "retentionInDays": 30,
+        "features": {
+          "enableLogAccessUsingOnlyResourcePermissions": true
+        }
+      },
+      "tags": {
+        "project": "hospital-inteligente-iot"
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2023-05-01",
+      "name": "[variables('accountName')]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "Standard_LRS"
+      },
+      "kind": "StorageV2",
+      "properties": {
+        "supportsHttpsTrafficOnly": true,
+        "minimumTlsVersion": "TLS1_2",
+        "allowBlobPublicAccess": false,
+        "allowSharedKeyAccess": true
+      },
+      "tags": {
+        "project": "hospital-inteligente-iot"
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/fileServices",
+      "apiVersion": "2023-05-01",
+      "name": "[format('{0}/{1}', variables('accountName'), 'default')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('accountName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/fileServices/shares",
+      "apiVersion": "2023-05-01",
+      "name": "[format('{0}/{1}/{2}', variables('accountName'), 'default', 'influxdata')]",
+      "properties": {
+        "shareQuota": 100
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/fileServices', variables('accountName'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/fileServices/shares",
+      "apiVersion": "2023-05-01",
+      "name": "[format('{0}/{1}/{2}', variables('accountName'), 'default', 'grafanadata')]",
+      "properties": {
+        "shareQuota": 20
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/fileServices', variables('accountName'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Network/virtualNetworks",
+      "apiVersion": "2023-09-01",
+      "name": "[variables('vnetName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "addressSpace": {
+          "addressPrefixes": [
+            "10.30.0.0/16"
+          ]
+        },
+        "subnets": [
+          {
+            "name": "aca-infrastructure",
+            "properties": {
+              "addressPrefix": "10.30.0.0/23",
+              "delegations": [
+                {
+                  "name": "aca-delegation",
+                  "properties": {
+                    "serviceName": "Microsoft.App/environments"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "name": "postgres",
+            "properties": {
+              "addressPrefix": "10.30.2.0/28",
+              "delegations": [
+                {
+                  "name": "postgres-delegation",
+                  "properties": {
+                    "serviceName": "Microsoft.DBforPostgreSQL/flexibleServers"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Network/privateDnsZones",
+      "apiVersion": "2020-06-01",
+      "name": "private.postgres.database.azure.com",
+      "location": "global"
+    },
+    {
+      "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
+      "apiVersion": "2020-06-01",
+      "name": "[format('{0}/{1}', 'private.postgres.database.azure.com', 'pg-vnet-link')]",
+      "location": "global",
+      "properties": {
+        "virtualNetwork": {
+          "id": "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]"
+        },
+        "registrationEnabled": false
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/privateDnsZones', 'private.postgres.database.azure.com')]",
+        "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.DBforPostgreSQL/flexibleServers",
+      "apiVersion": "2023-06-01-preview",
+      "name": "[variables('pgName')]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "Standard_B1ms",
+        "tier": "Burstable"
+      },
+      "properties": {
+        "administratorLogin": "[parameters('postgresAdminLogin')]",
+        "administratorLoginPassword": "[parameters('postgresAdminPassword')]",
+        "version": "16",
+        "storage": {
+          "storageSizeGB": 32,
+          "autoGrow": "Enabled"
+        },
+        "backup": {
+          "backupRetentionDays": 7,
+          "geoRedundantBackup": "Disabled"
+        },
+        "network": {
+          "delegatedSubnetResourceId": "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('vnetName'), 'postgres')]",
+          "privateDnsZoneArmResourceId": "[resourceId('Microsoft.Network/privateDnsZones', 'private.postgres.database.azure.com')]",
+          "publicNetworkAccess": "Disabled"
+        }
+      },
+      "tags": {
+        "project": "hospital-inteligente-iot"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/privateDnsZones/virtualNetworkLinks', 'private.postgres.database.azure.com', 'pg-vnet-link')]",
+        "[resourceId('Microsoft.Network/privateDnsZones', 'private.postgres.database.azure.com')]",
+        "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.DBforPostgreSQL/flexibleServers/databases",
+      "apiVersion": "2023-06-01-preview",
+      "name": "[format('{0}/{1}', variables('pgName'), 'hospital_iot')]",
+      "properties": {
+        "charset": "UTF8",
+        "collation": "en_US.utf8"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', variables('pgName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+      "apiVersion": "2023-01-31",
+      "name": "[format('id-{0}', parameters('namePrefix'))]",
+      "location": "[parameters('location')]"
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName'))]",
+      "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('id-{0}', parameters('namePrefix'))), variables('acrPullRoleId'))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('acrPullRoleId'))]",
+        "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('id-{0}', parameters('namePrefix'))), '2023-01-31').principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('id-{0}', parameters('namePrefix')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.App/managedEnvironments",
+      "apiVersion": "2024-03-01",
+      "name": "[variables('environmentName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "appLogsConfiguration": {
+          "destination": "log-analytics",
+          "logAnalyticsConfiguration": {
+            "customerId": "[reference(resourceId('Microsoft.OperationalInsights/workspaces', variables('workspaceName')), '2022-10-01').customerId]",
+            "sharedKey": "[listKeys(resourceId('Microsoft.OperationalInsights/workspaces', variables('workspaceName')), '2022-10-01').primarySharedKey]"
+          }
+        },
+        "vnetConfiguration": {
+          "infrastructureSubnetId": "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('vnetName'), 'aca-infrastructure')]",
+          "internal": false
+        }
+      },
+      "tags": {
+        "project": "hospital-inteligente-iot"
+      },
+      "dependsOn": [
+        "[extensionResourceId(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), 'Microsoft.Authorization/roleAssignments', guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('id-{0}', parameters('namePrefix'))), variables('acrPullRoleId')))]",
+        "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]",
+        "[resourceId('Microsoft.OperationalInsights/workspaces', variables('workspaceName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.App/managedEnvironments/storages",
+      "apiVersion": "2024-03-01",
+      "name": "[format('{0}/{1}', variables('environmentName'), 'influx-data')]",
+      "properties": {
+        "azureFile": {
+          "accountName": "[variables('accountName')]",
+          "accountKey": "[listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('accountName')), '2023-05-01').keys[0].value]",
+          "shareName": "influxdata",
+          "accessMode": "ReadWrite"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.App/managedEnvironments', variables('environmentName'))]",
+        "[resourceId('Microsoft.Storage/storageAccounts/fileServices/shares', variables('accountName'), 'default', 'influxdata')]",
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('accountName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.App/managedEnvironments/storages",
+      "apiVersion": "2024-03-01",
+      "name": "[format('{0}/{1}', variables('environmentName'), 'grafana-data')]",
+      "properties": {
+        "azureFile": {
+          "accountName": "[variables('accountName')]",
+          "accountKey": "[listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('accountName')), '2023-05-01').keys[0].value]",
+          "shareName": "grafanadata",
+          "accessMode": "ReadWrite"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.App/managedEnvironments', variables('environmentName'))]",
+        "[resourceId('Microsoft.Storage/storageAccounts/fileServices/shares', variables('accountName'), 'default', 'grafanadata')]",
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('accountName'))]"
+      ]
+    },
+    {
+      "condition": "[parameters('enableDigitalTwins')]",
+      "type": "Microsoft.DigitalTwins/digitalTwinsInstances",
+      "apiVersion": "2023-05-31",
+      "name": "[format('adt-{0}-{1}', parameters('namePrefix'), uniqueString(resourceGroup().id))]",
+      "location": "[parameters('location')]",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "publicNetworkAccess": "Enabled"
+      },
+      "tags": {
+        "project": "hospital-inteligente-iot"
+      }
+    },
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2024-03-01",
+      "name": "[format('{0}-ai', variables('appPrefix'))]",
+      "location": "[parameters('location')]",
+      "identity": "[variables('appIdentity')]",
+      "properties": {
+        "managedEnvironmentId": "[resourceId('Microsoft.App/managedEnvironments', variables('environmentName'))]",
+        "configuration": {
+          "registries": [
+            {
+              "server": "[reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2023-07-01').loginServer]",
+              "identity": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('id-{0}', parameters('namePrefix')))]"
+            }
+          ],
+          "activeRevisionsMode": "Single",
+          "ingress": {
+            "external": false,
+            "targetPort": 8000,
+            "transport": "http",
+            "allowInsecure": false
+          }
+        },
+        "template": {
+          "containers": [
+            {
+              "name": "analytics-ai",
+              "image": "[format('{0}/hospital-analytics-ai:{1}', format('{0}', reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2023-07-01').loginServer), parameters('imageTag'))]",
+              "resources": {
+                "cpu": "[json('0.5')]",
+                "memory": "1Gi"
+              }
+            }
+          ],
+          "scale": {
+            "minReplicas": 0,
+            "maxReplicas": 2
+          }
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), 'Microsoft.Authorization/roleAssignments', guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('id-{0}', parameters('namePrefix'))), variables('acrPullRoleId')))]",
+        "[resourceId('Microsoft.App/managedEnvironments', variables('environmentName'))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('id-{0}', parameters('namePrefix')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2024-03-01",
+      "name": "[format('{0}-mqtt', variables('appPrefix'))]",
+      "location": "[parameters('location')]",
+      "identity": "[variables('appIdentity')]",
+      "properties": {
+        "managedEnvironmentId": "[resourceId('Microsoft.App/managedEnvironments', variables('environmentName'))]",
+        "configuration": {
+          "registries": [
+            {
+              "server": "[reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2023-07-01').loginServer]",
+              "identity": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('id-{0}', parameters('namePrefix')))]"
+            }
+          ],
+          "activeRevisionsMode": "Single",
+          "ingress": {
+            "external": false,
+            "targetPort": 1883,
+            "transport": "tcp",
+            "allowInsecure": false
+          },
+          "secrets": [
+            {
+              "name": "mqtt-password",
+              "value": "[parameters('mqttPassword')]"
+            }
+          ]
+        },
+        "template": {
+          "containers": [
+            {
+              "name": "mqtt",
+              "image": "[format('{0}/hospital-mqtt:{1}', format('{0}', reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2023-07-01').loginServer), parameters('imageTag'))]",
+              "resources": {
+                "cpu": "[json('0.25')]",
+                "memory": "0.5Gi"
+              },
+              "env": [
+                {
+                  "name": "MOSQUITTO_USERNAME",
+                  "value": "[parameters('mqttUsername')]"
+                },
+                {
+                  "name": "MOSQUITTO_PASSWORD",
+                  "secretRef": "mqtt-password"
+                }
+              ]
+            }
+          ],
+          "scale": {
+            "minReplicas": 1,
+            "maxReplicas": 1
+          }
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), 'Microsoft.Authorization/roleAssignments', guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('id-{0}', parameters('namePrefix'))), variables('acrPullRoleId')))]",
+        "[resourceId('Microsoft.App/managedEnvironments', variables('environmentName'))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('id-{0}', parameters('namePrefix')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2024-03-01",
+      "name": "[format('{0}-influx', variables('appPrefix'))]",
+      "location": "[parameters('location')]",
+      "identity": "[variables('appIdentity')]",
+      "properties": {
+        "managedEnvironmentId": "[resourceId('Microsoft.App/managedEnvironments', variables('environmentName'))]",
+        "configuration": {
+          "registries": [
+            {
+              "server": "[reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2023-07-01').loginServer]",
+              "identity": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('id-{0}', parameters('namePrefix')))]"
+            }
+          ],
+          "activeRevisionsMode": "Single",
+          "ingress": {
+            "external": false,
+            "targetPort": 8086,
+            "transport": "http",
+            "allowInsecure": false
+          },
+          "secrets": [
+            {
+              "name": "influx-token",
+              "value": "[parameters('influxToken')]"
+            },
+            {
+              "name": "pg-password",
+              "value": "[parameters('postgresAdminPassword')]"
+            }
+          ]
+        },
+        "template": {
+          "containers": [
+            {
+              "name": "influxdb",
+              "image": "[format('{0}/hospital-influxdb:{1}', format('{0}', reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2023-07-01').loginServer), parameters('imageTag'))]",
+              "resources": {
+                "cpu": "[json('1')]",
+                "memory": "2Gi"
+              },
+              "env": [
+                {
+                  "name": "DOCKER_INFLUXDB_INIT_MODE",
+                  "value": "setup"
+                },
+                {
+                  "name": "DOCKER_INFLUXDB_INIT_USERNAME",
+                  "value": "[parameters('postgresAdminLogin')]"
+                },
+                {
+                  "name": "DOCKER_INFLUXDB_INIT_PASSWORD",
+                  "secretRef": "pg-password"
+                },
+                {
+                  "name": "DOCKER_INFLUXDB_INIT_ORG",
+                  "value": "hospital"
+                },
+                {
+                  "name": "DOCKER_INFLUXDB_INIT_BUCKET",
+                  "value": "HospitalIoT"
+                },
+                {
+                  "name": "DOCKER_INFLUXDB_INIT_RETENTION",
+                  "value": "6d"
+                },
+                {
+                  "name": "DOCKER_INFLUXDB_INIT_ADMIN_TOKEN",
+                  "secretRef": "influx-token"
+                }
+              ],
+              "volumeMounts": [
+                {
+                  "volumeName": "influx-data",
+                  "mountPath": "/var/lib/influxdb2"
+                }
+              ]
+            }
+          ],
+          "volumes": [
+            {
+              "name": "influx-data",
+              "storageType": "AzureFile",
+              "storageName": "influx-data"
+            }
+          ],
+          "scale": {
+            "minReplicas": 1,
+            "maxReplicas": 1
+          }
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), 'Microsoft.Authorization/roleAssignments', guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('id-{0}', parameters('namePrefix'))), variables('acrPullRoleId')))]",
+        "[resourceId('Microsoft.App/managedEnvironments', variables('environmentName'))]",
+        "[resourceId('Microsoft.App/managedEnvironments/storages', variables('environmentName'), 'influx-data')]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('id-{0}', parameters('namePrefix')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2024-03-01",
+      "name": "[format('{0}-backend', variables('appPrefix'))]",
+      "location": "[parameters('location')]",
+      "identity": "[variables('appIdentity')]",
+      "properties": {
+        "managedEnvironmentId": "[resourceId('Microsoft.App/managedEnvironments', variables('environmentName'))]",
+        "configuration": {
+          "registries": [
+            {
+              "server": "[reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2023-07-01').loginServer]",
+              "identity": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('id-{0}', parameters('namePrefix')))]"
+            }
+          ],
+          "activeRevisionsMode": "Single",
+          "ingress": {
+            "external": true,
+            "targetPort": 3000,
+            "transport": "http",
+            "allowInsecure": false
+          },
+          "secrets": "[variables('commonSecrets')]"
+        },
+        "template": {
+          "containers": [
+            {
+              "name": "backend",
+              "image": "[format('{0}/hospital-backend:{1}', format('{0}', reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2023-07-01').loginServer), parameters('imageTag'))]",
+              "resources": {
+                "cpu": "[json('0.5')]",
+                "memory": "1Gi"
+              },
+              "env": "[concat(createArray(createObject('name', 'PORT', 'value', '3000'), createObject('name', 'MQTT_URL', 'value', format('mqtt://{0}:1883', reference(resourceId('Microsoft.App/containerApps', format('{0}-mqtt', variables('appPrefix'))), '2024-03-01').configuration.ingress.fqdn)), createObject('name', 'INFLUX_URL', 'value', format('http://{0}:8086', reference(resourceId('Microsoft.App/containerApps', format('{0}-influx', variables('appPrefix'))), '2024-03-01').configuration.ingress.fqdn)), createObject('name', 'INFLUX_ORG', 'value', 'hospital'), createObject('name', 'INFLUX_BUCKET', 'value', 'HospitalIoT'), createObject('name', 'INFLUX_TOKEN', 'secretRef', 'influx-token'), createObject('name', 'DATABASE_URL', 'secretRef', 'database-url'), createObject('name', 'CONTROL_TOKEN', 'secretRef', 'control-token'), createObject('name', 'AI_SERVICE_URL', 'value', format('http://{0}:8000', reference(resourceId('Microsoft.App/containerApps', format('{0}-ai', variables('appPrefix'))), '2024-03-01').configuration.ingress.fqdn)), createObject('name', 'MQTT_USERNAME', 'value', parameters('mqttUsername')), createObject('name', 'MQTT_PASSWORD', 'secretRef', 'mqtt-password'), createObject('name', 'CORS_ORIGIN', 'value', '*')), if(empty(parameters('azureMapsKey')), createArray(), createArray(createObject('name', 'AZURE_MAPS_KEY', 'secretRef', 'maps-key'))), if(parameters('enableDigitalTwins'), createArray(createObject('name', 'AZURE_DIGITAL_TWINS_URL', 'value', format('https://{0}.api.{1}.digitaltwins.azure.net', format('adt-{0}-{1}', parameters('namePrefix'), uniqueString(resourceGroup().id)), parameters('location')))), createArray()))]"
+            }
+          ],
+          "scale": {
+            "minReplicas": 0,
+            "maxReplicas": 3
+          }
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), 'Microsoft.Authorization/roleAssignments', guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('id-{0}', parameters('namePrefix'))), variables('acrPullRoleId')))]",
+        "[extensionResourceId(resourceId('Microsoft.DigitalTwins/digitalTwinsInstances', format('adt-{0}-{1}', parameters('namePrefix'), uniqueString(resourceGroup().id))), 'Microsoft.Authorization/roleAssignments', guid(resourceId('Microsoft.DigitalTwins/digitalTwinsInstances', format('adt-{0}-{1}', parameters('namePrefix'), uniqueString(resourceGroup().id))), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('id-{0}', parameters('namePrefix'))), variables('twinsDataOwnerRoleId')))]",
+        "[resourceId('Microsoft.App/containerApps', format('{0}-ai', variables('appPrefix')))]",
+        "[resourceId('Microsoft.App/managedEnvironments', variables('environmentName'))]",
+        "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers/databases', variables('pgName'), 'hospital_iot')]",
+        "[resourceId('Microsoft.DigitalTwins/digitalTwinsInstances', format('adt-{0}-{1}', parameters('namePrefix'), uniqueString(resourceGroup().id)))]",
+        "[resourceId('Microsoft.App/containerApps', format('{0}-influx', variables('appPrefix')))]",
+        "[resourceId('Microsoft.App/containerApps', format('{0}-mqtt', variables('appPrefix')))]",
+        "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', variables('pgName'))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('id-{0}', parameters('namePrefix')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2024-03-01",
+      "name": "[format('{0}-simulator', variables('appPrefix'))]",
+      "location": "[parameters('location')]",
+      "identity": "[variables('appIdentity')]",
+      "properties": {
+        "managedEnvironmentId": "[resourceId('Microsoft.App/managedEnvironments', variables('environmentName'))]",
+        "configuration": {
+          "registries": [
+            {
+              "server": "[reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2023-07-01').loginServer]",
+              "identity": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('id-{0}', parameters('namePrefix')))]"
+            }
+          ],
+          "activeRevisionsMode": "Single",
+          "secrets": "[concat(createArray(createObject('name', 'mqtt-password', 'value', parameters('mqttPassword'))), if(empty(parameters('azureMapsKey')), createArray(), createArray(createObject('name', 'maps-key', 'value', parameters('azureMapsKey')))))]"
+        },
+        "template": {
+          "containers": [
+            {
+              "name": "simulator",
+              "image": "[format('{0}/hospital-backend:{1}', format('{0}', reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2023-07-01').loginServer), parameters('imageTag'))]",
+              "command": [
+                "npm",
+                "run",
+                "simulate"
+              ],
+              "resources": {
+                "cpu": "[json('0.25')]",
+                "memory": "0.5Gi"
+              },
+              "env": "[concat(createArray(createObject('name', 'MQTT_URL', 'value', format('mqtt://{0}:1883', reference(resourceId('Microsoft.App/containerApps', format('{0}-mqtt', variables('appPrefix'))), '2024-03-01').configuration.ingress.fqdn)), createObject('name', 'TELEMETRY_INTERVAL_MS', 'value', '300000'), createObject('name', 'HOSPITAL_LATITUDE', 'value', '4.7110'), createObject('name', 'HOSPITAL_LONGITUDE', 'value', '-74.0721'), createObject('name', 'MQTT_USERNAME', 'value', parameters('mqttUsername')), createObject('name', 'MQTT_PASSWORD', 'secretRef', 'mqtt-password')), if(empty(parameters('azureMapsKey')), createArray(), createArray(createObject('name', 'AZURE_MAPS_KEY', 'secretRef', 'maps-key'))))]"
+            }
+          ],
+          "scale": {
+            "minReplicas": 1,
+            "maxReplicas": 1
+          }
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), 'Microsoft.Authorization/roleAssignments', guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('id-{0}', parameters('namePrefix'))), variables('acrPullRoleId')))]",
+        "[resourceId('Microsoft.App/managedEnvironments', variables('environmentName'))]",
+        "[resourceId('Microsoft.App/containerApps', format('{0}-mqtt', variables('appPrefix')))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('id-{0}', parameters('namePrefix')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.App/jobs",
+      "apiVersion": "2025-01-01",
+      "name": "[format('{0}-history-seed', variables('appPrefix'))]",
+      "location": "[parameters('location')]",
+      "identity": "[variables('appIdentity')]",
+      "properties": {
+        "environmentId": "[resourceId('Microsoft.App/managedEnvironments', variables('environmentName'))]",
+        "configuration": {
+          "triggerType": "Manual",
+          "replicaTimeout": 3600,
+          "replicaRetryLimit": 2,
+          "manualTriggerConfig": {
+            "parallelism": 1,
+            "replicaCompletionCount": 1
+          },
+          "registries": [
+            {
+              "server": "[reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2023-07-01').loginServer]",
+              "identity": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('id-{0}', parameters('namePrefix')))]"
+            }
+          ],
+          "secrets": "[variables('commonSecrets')]"
+        },
+        "template": {
+          "containers": [
+            {
+              "name": "history-seed",
+              "image": "[format('{0}/hospital-backend:{1}', format('{0}', reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2023-07-01').loginServer), parameters('imageTag'))]",
+              "command": [
+                "npm",
+                "run",
+                "seed"
+              ],
+              "resources": {
+                "cpu": "[json('0.5')]",
+                "memory": "1Gi"
+              },
+              "env": [
+                {
+                  "name": "INFLUX_URL",
+                  "value": "[format('http://{0}:8086', reference(resourceId('Microsoft.App/containerApps', format('{0}-influx', variables('appPrefix'))), '2024-03-01').configuration.ingress.fqdn)]"
+                },
+                {
+                  "name": "INFLUX_ORG",
+                  "value": "hospital"
+                },
+                {
+                  "name": "INFLUX_BUCKET",
+                  "value": "HospitalIoT"
+                },
+                {
+                  "name": "INFLUX_TOKEN",
+                  "secretRef": "influx-token"
+                },
+                {
+                  "name": "DATABASE_URL",
+                  "secretRef": "database-url"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), 'Microsoft.Authorization/roleAssignments', guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('id-{0}', parameters('namePrefix'))), variables('acrPullRoleId')))]",
+        "[resourceId('Microsoft.App/managedEnvironments', variables('environmentName'))]",
+        "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers/databases', variables('pgName'), 'hospital_iot')]",
+        "[resourceId('Microsoft.App/containerApps', format('{0}-influx', variables('appPrefix')))]",
+        "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', variables('pgName'))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('id-{0}', parameters('namePrefix')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2024-03-01",
+      "name": "[format('{0}-frontend', variables('appPrefix'))]",
+      "location": "[parameters('location')]",
+      "identity": "[variables('appIdentity')]",
+      "properties": {
+        "managedEnvironmentId": "[resourceId('Microsoft.App/managedEnvironments', variables('environmentName'))]",
+        "configuration": {
+          "registries": [
+            {
+              "server": "[reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2023-07-01').loginServer]",
+              "identity": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('id-{0}', parameters('namePrefix')))]"
+            }
+          ],
+          "activeRevisionsMode": "Single",
+          "ingress": {
+            "external": true,
+            "targetPort": 80,
+            "transport": "http",
+            "allowInsecure": false
+          }
+        },
+        "template": {
+          "containers": [
+            {
+              "name": "frontend",
+              "image": "[format('{0}/hospital-frontend:{1}', format('{0}', reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2023-07-01').loginServer), parameters('imageTag'))]",
+              "resources": {
+                "cpu": "[json('0.25')]",
+                "memory": "0.5Gi"
+              },
+              "env": [
+                {
+                  "name": "API_PROXY_URL",
+                  "value": "[format('https://{0}', reference(resourceId('Microsoft.App/containerApps', format('{0}-backend', variables('appPrefix'))), '2024-03-01').configuration.ingress.fqdn)]"
+                },
+                {
+                  "name": "GRAFANA_URL",
+                  "value": "[format('https://{0}', reference(resourceId('Microsoft.App/containerApps', format('{0}-grafana', variables('appPrefix'))), '2024-03-01').configuration.ingress.fqdn)]"
+                }
+              ]
+            }
+          ],
+          "scale": {
+            "minReplicas": 0,
+            "maxReplicas": 3
+          }
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), 'Microsoft.Authorization/roleAssignments', guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('id-{0}', parameters('namePrefix'))), variables('acrPullRoleId')))]",
+        "[resourceId('Microsoft.App/containerApps', format('{0}-backend', variables('appPrefix')))]",
+        "[resourceId('Microsoft.App/managedEnvironments', variables('environmentName'))]",
+        "[resourceId('Microsoft.App/containerApps', format('{0}-grafana', variables('appPrefix')))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('id-{0}', parameters('namePrefix')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2024-03-01",
+      "name": "[format('{0}-grafana', variables('appPrefix'))]",
+      "location": "[parameters('location')]",
+      "identity": "[variables('appIdentity')]",
+      "properties": {
+        "managedEnvironmentId": "[resourceId('Microsoft.App/managedEnvironments', variables('environmentName'))]",
+        "configuration": {
+          "registries": [
+            {
+              "server": "[reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2023-07-01').loginServer]",
+              "identity": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('id-{0}', parameters('namePrefix')))]"
+            }
+          ],
+          "activeRevisionsMode": "Single",
+          "ingress": {
+            "external": true,
+            "targetPort": 3000,
+            "transport": "http",
+            "allowInsecure": false
+          },
+          "secrets": [
+            {
+              "name": "grafana-password",
+              "value": "[parameters('grafanaPassword')]"
+            },
+            {
+              "name": "influx-token",
+              "value": "[parameters('influxToken')]"
+            }
+          ]
+        },
+        "template": {
+          "containers": [
+            {
+              "name": "grafana",
+              "image": "[format('{0}/hospital-grafana:{1}', format('{0}', reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2023-07-01').loginServer), parameters('imageTag'))]",
+              "resources": {
+                "cpu": "[json('0.25')]",
+                "memory": "0.5Gi"
+              },
+              "env": [
+                {
+                  "name": "GF_SECURITY_ADMIN_USER",
+                  "value": "admin"
+                },
+                {
+                  "name": "GF_SECURITY_ADMIN_PASSWORD",
+                  "secretRef": "grafana-password"
+                },
+                {
+                  "name": "GF_USERS_ALLOW_SIGN_UP",
+                  "value": "false"
+                },
+                {
+                  "name": "INFLUX_ORG",
+                  "value": "hospital"
+                },
+                {
+                  "name": "INFLUX_BUCKET",
+                  "value": "HospitalIoT"
+                },
+                {
+                  "name": "INFLUX_TOKEN",
+                  "secretRef": "influx-token"
+                }
+              ],
+              "volumeMounts": [
+                {
+                  "volumeName": "grafana-data",
+                  "mountPath": "/var/lib/grafana"
+                }
+              ]
+            }
+          ],
+          "volumes": [
+            {
+              "name": "grafana-data",
+              "storageType": "AzureFile",
+              "storageName": "grafana-data"
+            }
+          ],
+          "scale": {
+            "minReplicas": 0,
+            "maxReplicas": 1
+          }
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), 'Microsoft.Authorization/roleAssignments', guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('id-{0}', parameters('namePrefix'))), variables('acrPullRoleId')))]",
+        "[resourceId('Microsoft.App/managedEnvironments', variables('environmentName'))]",
+        "[resourceId('Microsoft.App/managedEnvironments/storages', variables('environmentName'), 'grafana-data')]",
+        "[resourceId('Microsoft.App/containerApps', format('{0}-influx', variables('appPrefix')))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('id-{0}', parameters('namePrefix')))]"
+      ]
+    },
+    {
+      "condition": "[parameters('enableDigitalTwins')]",
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.DigitalTwins/digitalTwinsInstances', format('adt-{0}-{1}', parameters('namePrefix'), uniqueString(resourceGroup().id)))]",
+      "name": "[guid(resourceId('Microsoft.DigitalTwins/digitalTwinsInstances', format('adt-{0}-{1}', parameters('namePrefix'), uniqueString(resourceGroup().id))), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('id-{0}', parameters('namePrefix'))), variables('twinsDataOwnerRoleId'))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('twinsDataOwnerRoleId'))]",
+        "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('id-{0}', parameters('namePrefix'))), '2023-01-31').principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.DigitalTwins/digitalTwinsInstances', format('adt-{0}-{1}', parameters('namePrefix'), uniqueString(resourceGroup().id)))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('id-{0}', parameters('namePrefix')))]"
+      ]
+    },
+    {
+      "condition": "[not(empty(parameters('dnsZoneName')))]",
+      "type": "Microsoft.Network/dnsZones",
+      "apiVersion": "2018-05-01",
+      "name": "[parameters('dnsZoneName')]",
+      "location": "global",
+      "properties": {}
+    },
+    {
+      "condition": "[parameters('enableAppService')]",
+      "type": "Microsoft.Web/serverfarms",
+      "apiVersion": "2023-12-01",
+      "name": "[format('asp-{0}', parameters('namePrefix'))]",
+      "location": "[parameters('location')]",
+      "kind": "linux",
+      "sku": {
+        "name": "B1",
+        "tier": "Basic",
+        "size": "B1",
+        "family": "B",
+        "capacity": 1
+      },
+      "properties": {
+        "reserved": true
+      }
+    },
+    {
+      "condition": "[parameters('enableAppService')]",
+      "type": "Microsoft.Web/sites",
+      "apiVersion": "2023-12-01",
+      "name": "[format('app-{0}-web-{1}', parameters('namePrefix'), uniqueString(resourceGroup().id))]",
+      "location": "[parameters('location')]",
+      "kind": "app,linux,container",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', format('asp-{0}', parameters('namePrefix')))]",
+        "httpsOnly": true,
+        "siteConfig": {
+          "linuxFxVersion": "[format('DOCKER|{0}/hospital-frontend:{1}', reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2023-07-01').loginServer, parameters('imageTag'))]",
+          "acrUseManagedIdentityCreds": true,
+          "appSettings": [
+            {
+              "name": "API_PROXY_URL",
+              "value": "[format('https://{0}', reference(resourceId('Microsoft.App/containerApps', format('{0}-backend', variables('appPrefix'))), '2024-03-01').configuration.ingress.fqdn)]"
+            },
+            {
+              "name": "GRAFANA_URL",
+              "value": "[format('https://{0}', reference(resourceId('Microsoft.App/containerApps', format('{0}-grafana', variables('appPrefix'))), '2024-03-01').configuration.ingress.fqdn)]"
+            },
+            {
+              "name": "WEBSITES_PORT",
+              "value": "80"
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/serverfarms', format('asp-{0}', parameters('namePrefix')))]",
+        "[resourceId('Microsoft.App/containerApps', format('{0}-backend', variables('appPrefix')))]",
+        "[resourceId('Microsoft.App/containerApps', format('{0}-grafana', variables('appPrefix')))]"
+      ]
+    },
+    {
+      "condition": "[parameters('enableAppService')]",
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName'))]",
+      "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), resourceId('Microsoft.Web/sites', format('app-{0}-web-{1}', parameters('namePrefix'), uniqueString(resourceGroup().id))), 'app-service-acr-pull')]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('acrPullRoleId'))]",
+        "principalId": "[coalesce(tryGet(tryGet(if(parameters('enableAppService'), reference(resourceId('Microsoft.Web/sites', format('app-{0}-web-{1}', parameters('namePrefix'), uniqueString(resourceGroup().id))), '2023-12-01', 'full'), null()), 'identity'), 'principalId'), '')]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', format('app-{0}-web-{1}', parameters('namePrefix'), uniqueString(resourceGroup().id)))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "frontendUrl": {
+      "type": "string",
+      "value": "[format('https://{0}', reference(resourceId('Microsoft.App/containerApps', format('{0}-frontend', variables('appPrefix'))), '2024-03-01').configuration.ingress.fqdn)]"
+    },
+    "backendUrl": {
+      "type": "string",
+      "value": "[format('https://{0}', reference(resourceId('Microsoft.App/containerApps', format('{0}-backend', variables('appPrefix'))), '2024-03-01').configuration.ingress.fqdn)]"
+    },
+    "grafanaUrl": {
+      "type": "string",
+      "value": "[format('https://{0}', reference(resourceId('Microsoft.App/containerApps', format('{0}-grafana', variables('appPrefix'))), '2024-03-01').configuration.ingress.fqdn)]"
+    },
+    "postgresHost": {
+      "type": "string",
+      "value": "[format('{0}.postgres.database.azure.com', variables('pgName'))]"
+    },
+    "containerRegistry": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2023-07-01').loginServer]"
+    },
+    "appServiceUrl": {
+      "type": "string",
+      "value": "[coalesce(tryGet(tryGet(if(parameters('enableAppService'), reference(resourceId('Microsoft.Web/sites', format('app-{0}-web-{1}', parameters('namePrefix'), uniqueString(resourceGroup().id))), '2023-12-01', 'full'), null()), 'properties'), 'defaultHostName'), 'Not deployed (set enableAppService=true)')]"
+    },
+    "dnsNameServers": {
+      "type": "array",
+      "value": "[coalesce(tryGet(tryGet(if(not(empty(parameters('dnsZoneName'))), reference(resourceId('Microsoft.Network/dnsZones', parameters('dnsZoneName')), '2018-05-01', 'full'), null()), 'properties'), 'nameServers'), createArray())]"
+    },
+    "digitalTwinsHost": {
+      "type": "string",
+      "value": "[coalesce(tryGet(tryGet(if(parameters('enableDigitalTwins'), reference(resourceId('Microsoft.DigitalTwins/digitalTwinsInstances', format('adt-{0}-{1}', parameters('namePrefix'), uniqueString(resourceGroup().id))), '2023-05-31', 'full'), null()), 'properties'), 'hostName'), 'Not deployed (set enableDigitalTwins=true)')]"
+    }
+  }
+}

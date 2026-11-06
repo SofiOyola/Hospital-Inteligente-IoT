@@ -13,8 +13,8 @@ flowchart LR
   B --> I[(InfluxDB 2.x<br/>HospitalIoT)]
   B --> P[(PostgreSQL<br/>alertas y auditoría)]
   B --> A[Servicio IA<br/>Isolation Forest]
-  B --> T[Digital Twins<br/>locales / Azure opcional]
-  B --> W[Azure Maps Weather]
+  B --> T[Digital Twins<br/>locales / Azure]
+  B --> W[Azure Maps Weather / Open-Meteo fallback]
   B --> O[Open-Meteo Air Quality]
   I --> G[Grafana]
   B --> F[Frontend React + TypeScript]
@@ -78,7 +78,7 @@ El catálogo de diez fuentes está definido en [backend/src/devices.js](./backen
 | `airquality-external` | Open-Meteo Air Quality | `aqi`, `pm25`, `pm10` |
 | `historical-dataset` | Dataset de seis días | `energyKwh`, `occupancy`, `temperature` |
 
-Weather Atlas se habilita con una clave **Azure Maps** en `AZURE_MAPS_KEY`. Sin clave, el simulador identifica el clima como `simulated-no-api-key`; `GET /api/weather` devuelve HTTP 503 en lugar de afirmar que el dato es real. La calidad del aire consulta Open-Meteo (requiere acceso de red). Coordenadas configurables: `HOSPITAL_LATITUDE` y `HOSPITAL_LONGITUDE`.
+Weather Atlas se habilita con una clave **Azure Maps** en `AZURE_MAPS_KEY`. Sin clave, `GET /api/weather` y el simulador usan condiciones reales de Open-Meteo, identificadas por proveedor; la calidad del aire también consulta Open-Meteo. Ambos requieren acceso de red. Coordenadas configurables: `HOSPITAL_LATITUDE` y `HOSPITAL_LONGITUDE`.
 
 Ejemplo MQTT real del simulador (payload plano):
 
@@ -109,7 +109,7 @@ Todas las rutas, salvo `/docs`, tienen prefijo `/api`:
 | `GET` | `/analytics` | Tendencias, extremos y predicciones/anomalías no supervisadas |
 | `POST` | `/control` | Comando MQTT auditado |
 | `GET` | `/twins` | Snapshots de los gemelos locales |
-| `GET` | `/weather` | Consulta real Azure Maps (requiere clave) |
+| `GET` | `/weather` | Azure Maps o condiciones reales de Open-Meteo si no hay clave |
 
 `range` acepta `1h`, `6h`, `24h` o `7d`. Swagger: http://localhost:3000/docs.
 
@@ -150,7 +150,7 @@ El backend aislado necesita variables `INFLUX_TOKEN` y `DATABASE_URL`; para vali
 
 ## Despliegue Azure
 
-Los templates de [infra/azure/](./infra/azure/) preparan Azure Container Apps, PostgreSQL Flexible Server con red privada, Azure Files, Log Analytics/Monitor, ACR, Azure Maps opcional, Azure Digital Twins opcional, Azure DNS opcional y App Service opcional. **No se ha desplegado ningún recurso ni generado una URL pública**: requieren suscripción, permisos, cuota y credenciales del propietario. El script [infra/azure/deploy.sh](./infra/azure/deploy.sh) imprime URLs reales después de un despliegue exitoso.
+Los templates de [infra/azure/](./infra/azure/) preparan Azure Container Apps, PostgreSQL Flexible Server con red privada, Azure Files, Log Analytics/Monitor, ACR, Digital Twins y App Service. Azure Maps requiere una clave; Azure DNS personalizado requiere un dominio propio. Sin esos datos, Weather usa Open-Meteo y los servicios web usan FQDN públicos de Azure.
 
 Para DNS personalizado, proporciona un dominio propio y delega los nameservers entregados por Azure DNS; habilita HTTPS y valida el certificado antes de compartir el dominio. La URL por defecto de Container Apps será un FQDN público `azurecontainerapps.io`.
 
@@ -174,4 +174,3 @@ No agregues `.env`, credenciales Azure, tokens ni datos reales. El `.gitignore` 
 - Documento universitario completo, con los veinte capítulos solicitados y cinco diagramas Mermaid: [docs/PROYECTO.md](./docs/PROYECTO.md).
 - Muestra CSV y calendario de eventos: [datasets/](./datasets/).
 - Convertir a PDF: instala Pandoc, XeLaTeX y `mermaid-filter`, luego ejecuta `./scripts/generate-pdf.sh`. La conversión es local; no se suben documentos a terceros.
-

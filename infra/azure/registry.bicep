@@ -5,7 +5,7 @@ targetScope = 'resourceGroup'
 @description('Prefijo corto, en minúsculas y único dentro del grupo de recursos.')
 param namePrefix string
 
-param location string = resourceGroup().location
+param location string = 'eastus'
 
 var registryName = toLower('cr${namePrefix}${uniqueString(resourceGroup().id)}')
 

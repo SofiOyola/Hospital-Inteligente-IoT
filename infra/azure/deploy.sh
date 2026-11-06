@@ -12,10 +12,10 @@ command -v az >/dev/null || { echo "Install Azure CLI first." >&2; exit 1; }
 command -v jq >/dev/null || { echo "Install jq first." >&2; exit 1; }
 
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
-LOCATION="${LOCATION:-eastus2}"
+LOCATION="${LOCATION:-eastus}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
-ENABLE_DIGITAL_TWINS="${ENABLE_DIGITAL_TWINS:-false}"
-ENABLE_APP_SERVICE="${ENABLE_APP_SERVICE:-false}"
+ENABLE_DIGITAL_TWINS="${ENABLE_DIGITAL_TWINS:-true}"
+ENABLE_APP_SERVICE="${ENABLE_APP_SERVICE:-true}"
 DNS_ZONE_NAME="${DNS_ZONE_NAME:-}"
 POSTGRES_ADMIN_LOGIN="${POSTGRES_ADMIN_LOGIN:-hospitaladmin}"
 MQTT_USERNAME="${MQTT_USERNAME:-hospital-iot}"
@@ -25,7 +25,9 @@ case "$ENABLE_DIGITAL_TWINS" in true|false) ;; *) echo "ENABLE_DIGITAL_TWINS mus
 case "$ENABLE_APP_SERVICE" in true|false) ;; *) echo "ENABLE_APP_SERVICE must be true or false." >&2; exit 1 ;; esac
 
 az account set --subscription "$AZURE_SUBSCRIPTION_ID"
-az group create --name "$RESOURCE_GROUP" --location "$LOCATION" --output none
+if [[ "$(az group exists --name "$RESOURCE_GROUP")" != "true" ]]; then
+  az group create --name "$RESOURCE_GROUP" --location "$LOCATION" --output none
+fi
 
 az deployment group create \
   --resource-group "$RESOURCE_GROUP" \
